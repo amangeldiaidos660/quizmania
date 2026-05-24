@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CategoryModal from "@/components/CategoryModal";
 import GameBoard from "@/components/GameBoard";
 import ResultScreen from "@/components/ResultScreen";
 import StartScreen from "@/components/StartScreen";
 import { getQuizRun } from "@/lib/quiz";
-import { getProgress, saveAccentColor, saveRunResult } from "@/lib/progression";
+import { DEFAULT_PROGRESS, getProgress, saveAccentColor, saveRunResult, saveSelectedSkin } from "@/lib/progression";
 import { getAccentColor } from "@/lib/theme";
-import type { AccentColorId, CategoryId, GameResult, GameSetup, ProgressState, QuizQuestion } from "@/types/game";
+import type { AccentColorId, CategoryId, GameResult, GameSetup, ProgressState, QuizQuestion, SkinId } from "@/types/game";
 
 type Screen = "start" | "game" | "result";
 
@@ -19,10 +19,14 @@ export default function Home() {
   const [setup, setSetup] = useState<GameSetup | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [result, setResult] = useState<GameResult | null>(null);
-  const [progress, setProgress] = useState<ProgressState>(() => getProgress());
+  const [progress, setProgress] = useState<ProgressState>(DEFAULT_PROGRESS);
 
   const currentProgress = useMemo(() => progress, [progress]);
   const accent = getAccentColor(currentProgress.accentColor);
+
+  useEffect(() => {
+    setProgress(getProgress());
+  }, []);
 
   function startRun(category: CategoryId) {
     const nextSetup = { category, questionCount };
@@ -34,9 +38,9 @@ export default function Home() {
   }
 
   function finishRun(nextResult: GameResult) {
-    const nextProgress = saveRunResult(nextResult);
-    setProgress(nextProgress);
-    setResult(nextResult);
+    const saved = saveRunResult(nextResult);
+    setProgress(saved.progress);
+    setResult({ ...nextResult, unlockedSkin: saved.unlockedSkin });
     setScreen("result");
   }
 
@@ -47,6 +51,10 @@ export default function Home() {
 
   function changeAccentColor(accentColor: AccentColorId) {
     setProgress(saveAccentColor(accentColor));
+  }
+
+  function changeSkin(skin: SkinId) {
+    setProgress(saveSelectedSkin(skin));
   }
 
   return (
@@ -65,6 +73,7 @@ export default function Home() {
           progress={currentProgress}
           questionCount={questionCount}
           onAccentColorChange={changeAccentColor}
+          onSkinChange={changeSkin}
           onQuestionCountChange={setQuestionCount}
           onChooseCategory={() => setIsCategoryOpen(true)}
         />

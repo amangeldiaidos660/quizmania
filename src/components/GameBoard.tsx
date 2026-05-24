@@ -1,19 +1,25 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Heart } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DoubtEnemy } from "@/assets/game/enemies";
 import { MiniPlayer } from "@/assets/game/characters";
-import { STAGE_ONE_MAP } from "@/assets/game/maps";
-import {
-  getAnswerPositions,
-  getInitialDoubtPosition,
-  getInitialPlayerPosition,
-  moveDoubtTowardPlayer,
-  movePosition,
-  samePosition,
-} from "@/lib/game";
+import { EnemySprite } from "@/assets/game/enemies";
+import { STAGE_MAPS } from "@/assets/game/maps";
+import { PowerUpSprite, getPowerUpLabel } from "@/assets/game/powerups";
+import { SKIN_BONUSES } from "@/lib/progression";
+import type {
+  Direction,
+  EnemyId,
+  EnemyState,
+  GameResult,
+  GameSetup,
+  Position,
+  PowerUpId,
+  PowerUpState,
+  ProgressState,
+  QuizQuestion,
+  StageId,
+} from "@/types/game";
 import { getCategoryTitle, isSuccessfulRun } from "@/lib/quiz";
-import type { Direction, GameResult, GameSetup, Position, ProgressState, QuizQuestion } from "@/types/game";
 
 type GameBoardProps = {
   questions: QuizQuestion[];
@@ -22,24 +28,89 @@ type GameBoardProps = {
   onFinish: (result: GameResult) => void;
 };
 
-const playerMoveMs = 135;
-const doubtMoveMs = 430;
+const basePlayerMoveMs = 125;
+const baseFreezeMs = 3000;
+const directionDelta: Record<Direction, Position> = {
+  up: { row: -1, col: 0 },
+  down: { row: 1, col: 0 },
+  left: { row: 0, col: -1 },
+  right: { row: 0, col: 1 },
+};
+
+function samePosition(a: Position, b: Position) {
+  return a.row === b.row && a.col === b.col;
+}
+
+function getStageId(completedQuestions: number, totalQuestions: number): StageId {
+  const progress = completedQuestions / totalQuestions;
+  if (progress >= 0.8) return 3;
+  if (progress >= 0.3) return 2;
+  return 1;
+}
+
+function shuffle<T>(items: T[]) {
+  return [...items].sort(() => Math.random() - 0.5);
+}
 
 export default function GameBoard({ questions, setup, progress, onFinish }: GameBoardProps) {
+  const initialMap = STAGE_MAPS[1];
+  const skinBonus = SKIN_BONUSES[progress.selectedSkin];
+  const playerMoveMs = basePlayerMoveMs / (1 + skinBonus.speedBoost);
+  const maxLives = 3 + skinBonus.extraLife;
+
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [lives, setLives] = useState(3);
+  const [lives, setLives] = useState(maxLives);
   const [correctAnswers, setCorrectAnswers] = useState(0);
-  const [player, setPlayer] = useState<Position>(() => getInitialPlayerPosition());
-  const [doubt, setDoubt] = useState<Position>(() => getInitialDoubtPosition());
+  const [player, setPlayer] = useState<Position>(() => initialMap.playerStart);
+  const [enemies, setEnemies] = useState<EnemyState[]>(() => createEnemies(1));
+  const [powerUps, setPowerUps] = useState<PowerUpState[]>(() => createPowerUps(1, 0, skinBonus.unlocksFocus));
+  const [hiddenAnswerIds, setHiddenAnswerIds] = useState<string[]>([]);
+  const [focusAnswerId, setFocusAnswerId] = useState<string | null>(null);
   const [direction, setDirection] = useState<Direction | null>(null);
   const [isIntro, setIsIntro] = useState(true);
   const [message, setMessage] = useState<{ title: string; text: string; correct: boolean } | null>(null);
   const bestFunFactRef = useRef("");
   const lastPlayerMoveRef = useRef(0);
-  const lastDoubtMoveRef = useRef(0);
+  const lastEnemyMoveRef = useRef<Record<EnemyId, number>>({ doubt: 0, confusion: 0, panic: 0 });
+  const playerRef = useRef(player);
   const currentQuestion = questions[questionIndex];
-  const answerPositions = useMemo(() => getAnswerPositions(currentQuestion.answers), [currentQuestion.answers]);
+  const stageId = getStageId(questionIndex, questions.length);
+  const stageMap = STAGE_MAPS[stageId];
+  const answerPositions = useMemo(() => {
+    const slots = shuffle(stageMap.answerSlots).slice(0, currentQuestion.answers.length);
+    return currentQuestion.answers.map((answer, index) => ({ answer, position: slots[index] }));
+  }, [currentQuestion.answers, questionIndex, stageMap.answerSlots]);
   const isPaused = isIntro || Boolean(message);
+
+  function isWall(position: Position) {
+    return stageMap.layout[position.row]?.[position.col] === "#";
+  }
+
+  function movePosition(position: Position, nextDirection: Direction) {
+    const delta = directionDelta[nextDirection];
+    const next = { row: position.row + delta.row, col: position.col + delta.col };
+    return isWall(next) ? position : next;
+  }
+
+  function createEnemies(nextStage: StageId): EnemyState[] {
+    const ids: EnemyId[] = nextStage === 1 ? ["doubt"] : nextStage === 2 ? ["doubt", "confusion"] : ["doubt", "confusion", "panic"];
+    return ids.map((id) => ({ id, position: STAGE_MAPS[nextStage].enemyStarts[id], frozenUntil: 0 }));
+  }
+
+  function createPowerUps(nextStage: StageId, nextQuestionIndex: number, hasFocus: boolean): PowerUpState[] {
+    const slots = shuffle(STAGE_MAPS[nextStage].powerUpSlots);
+    const result: PowerUpState[] = [];
+
+    if (nextQuestionIndex % 3 === 1) result.push({ id: "hint", position: slots[0] });
+    if (nextStage >= 2) result.push({ id: "freeze", position: slots[result.length] });
+    if (hasFocus && nextQuestionIndex / questions.length >= 0.5) result.push({ id: "focus", position: slots[result.length] });
+
+    return result;
+  }
+
+  useEffect(() => {
+    playerRef.current = player;
+  }, [player]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setIsIntro(false), 1350);
@@ -83,10 +154,16 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
           setPlayer((current) => movePosition(current, direction));
         }
 
-        if (timestamp - lastDoubtMoveRef.current >= doubtMoveMs) {
-          lastDoubtMoveRef.current = timestamp;
-          setDoubt((current) => moveDoubtTowardPlayer(current, player));
-        }
+        setEnemies((current) =>
+          current.map((enemy) => {
+            if (enemy.frozenUntil > timestamp) return enemy;
+            const moveMs = enemy.id === "panic" ? (Math.floor(timestamp / 2400) % 2 === 0 ? 190 : 300) : enemy.id === "confusion" ? 440 : 390;
+            if (timestamp - lastEnemyMoveRef.current[enemy.id] < moveMs) return enemy;
+
+            lastEnemyMoveRef.current[enemy.id] = timestamp;
+            return { ...enemy, position: moveEnemy(enemy.id, enemy.position, timestamp) };
+          }),
+        );
       }
 
       frame = window.requestAnimationFrame(tick);
@@ -94,27 +171,85 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
 
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [direction, isPaused, player]);
+  }, [direction, isPaused, playerMoveMs, stageId]);
 
   useEffect(() => {
     if (isPaused) return;
 
-    const matchedAnswer = answerPositions.find((item) => samePosition(item.position, player));
-    if (matchedAnswer) {
-      const isCorrect = matchedAnswer.answer.id === currentQuestion.correctAnswerId;
-      handleQuestionEnd(isCorrect);
+    const matchedPowerUp = powerUps.find((item) => samePosition(item.position, player));
+    if (matchedPowerUp) {
+      activatePowerUp(matchedPowerUp.id);
+      setPowerUps((current) => current.filter((item) => item !== matchedPowerUp));
       return;
     }
 
-    if (samePosition(player, doubt)) {
-      loseLife("Сомнение поймало тебя", "Ментальная помеха сбила фокус. Двигайся дальше.", false);
+    const matchedAnswer = answerPositions.find((item) => samePosition(item.position, player) && !hiddenAnswerIds.includes(item.answer.id));
+    if (matchedAnswer) {
+      handleQuestionEnd(matchedAnswer.answer.id === currentQuestion.correctAnswerId);
+      return;
     }
-  }, [player, doubt, isPaused, answerPositions, currentQuestion.correctAnswerId]);
 
-  function resetPositions() {
-    setPlayer(getInitialPlayerPosition());
-    setDoubt(getInitialDoubtPosition());
+    if (enemies.some((enemy) => samePosition(player, enemy.position))) {
+      loseLife("Ментальная помеха поймала тебя", "Фокус сбился. Двигайся дальше.", false);
+    }
+  }, [player, enemies, isPaused, answerPositions, hiddenAnswerIds, powerUps, currentQuestion.correctAnswerId]);
+
+  function moveEnemy(id: EnemyId, enemy: Position, timestamp: number) {
+    if (id === "confusion" && Math.floor(timestamp / 3000) % 2 === 0) {
+      const nearestAnswer = answerPositions[0]?.position ?? playerRef.current;
+      return stepToward(enemy, nearestAnswer);
+    }
+
+    return stepToward(enemy, playerRef.current);
+  }
+
+  function stepToward(from: Position, target: Position) {
+    const openNeighbors = getOpenNeighbors(from);
+    if (openNeighbors.length === 0) return from;
+
+    return openNeighbors.sort((a, b) => distance(a, target) - distance(b, target))[0];
+  }
+
+  function getOpenNeighbors(position: Position) {
+    return Object.values(directionDelta)
+      .map((delta) => ({ row: position.row + delta.row, col: position.col + delta.col }))
+      .filter((next) => !isWall(next));
+  }
+
+  function distance(a: Position, b: Position) {
+    return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+  }
+
+  function resetQuestionState(nextQuestionIndex: number) {
+    const nextStage = getStageId(nextQuestionIndex, questions.length);
+    const nextMap = STAGE_MAPS[nextStage];
+    playerRef.current = nextMap.playerStart;
+    setPlayer(nextMap.playerStart);
+    setEnemies(createEnemies(nextStage));
+    setPowerUps(createPowerUps(nextStage, nextQuestionIndex, skinBonus.unlocksFocus));
+    setHiddenAnswerIds([]);
+    setFocusAnswerId(null);
     setDirection(null);
+  }
+
+  function activatePowerUp(id: PowerUpId) {
+    if (id === "hint") {
+      const wrong = currentQuestion.answers.find((answer) => answer.id !== currentQuestion.correctAnswerId && !hiddenAnswerIds.includes(answer.id));
+      if (wrong) setHiddenAnswerIds((current) => [...current, wrong.id]);
+    }
+
+    if (id === "freeze") {
+      const frozenUntil = performance.now() + baseFreezeMs + skinBonus.freezeBonusMs;
+      setEnemies((current) => current.map((enemy) => ({ ...enemy, frozenUntil })));
+    }
+
+    if (id === "focus") {
+      setFocusAnswerId(currentQuestion.correctAnswerId);
+      window.setTimeout(() => setFocusAnswerId(null), 1200);
+    }
+
+    setMessage({ title: getPowerUpLabel(id), text: "Бонус активирован.", correct: true });
+    window.setTimeout(() => setMessage(null), 650);
   }
 
   function loseLife(title: string, text: string, countAsQuestion: boolean) {
@@ -131,7 +266,7 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
       window.setTimeout(() => goNextQuestion(correctAnswers, nextLives), 1100);
     } else {
       window.setTimeout(() => {
-        resetPositions();
+        resetQuestionState(questionIndex);
         setMessage(null);
       }, 900);
     }
@@ -156,8 +291,9 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
       return;
     }
 
-    setQuestionIndex((current) => current + 1);
-    resetPositions();
+    const nextIndex = questionIndex + 1;
+    setQuestionIndex(nextIndex);
+    resetQuestionState(nextIndex);
     setMessage(null);
     setIsIntro(true);
   }
@@ -179,7 +315,7 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
         <div className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em] accent-text">
-              {getCategoryTitle(setup.category)} · Вопрос {questionIndex + 1}/{questions.length}
+              {getCategoryTitle(setup.category)} · {stageMap.title} · Вопрос {questionIndex + 1}/{questions.length}
             </p>
             <h1 className="mt-2 text-xl font-black text-white md:text-2xl">{currentQuestion.question}</h1>
           </div>
@@ -189,9 +325,7 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
                 <Heart key={index} size={20} fill="currentColor" />
               ))}
             </div>
-            <div className="rounded-lg px-3 py-2 text-sm font-black text-black accent-bg">
-              {correctAnswers} верно
-            </div>
+            <div className="rounded-lg px-3 py-2 text-sm font-black text-black accent-bg">{correctAnswers} верно</div>
           </div>
         </div>
 
@@ -201,21 +335,23 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
               className="grid aspect-square max-h-[min(72vh,760px)] w-full grid-cols-[repeat(15,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] gap-1"
               aria-label="Квиз-лабиринт"
             >
-              {STAGE_ONE_MAP.map((row, rowIndex) =>
+              {stageMap.layout.map((row, rowIndex) =>
                 [...row].map((tile, colIndex) => {
                   const position = { row: rowIndex, col: colIndex };
-                  const answer = answerPositions.find((item) => samePosition(item.position, position));
+                  const answer = answerPositions.find((item) => samePosition(item.position, position) && !hiddenAnswerIds.includes(item.answer.id));
+                  const powerUp = powerUps.find((item) => samePosition(item.position, position));
+                  const enemy = enemies.find((item) => samePosition(item.position, position));
                   const hasPlayer = samePosition(player, position);
-                  const hasDoubt = samePosition(doubt, position);
-                  const isWall = tile === "#";
+                  const isWallTile = tile === "#";
 
                   return (
                     <div
                       key={`${rowIndex}-${colIndex}`}
                       className={[
                         "relative grid min-h-0 place-items-center rounded-[5px]",
-                        isWall ? "bg-cyan-500/25 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.18)]" : "bg-white/[0.035]",
+                        isWallTile ? "bg-cyan-500/25 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.18)]" : "bg-white/[0.035]",
                         answer ? "border bg-[var(--accent-soft)] accent-border" : "",
+                        answer?.answer.id === focusAnswerId ? "ring-4 ring-white/80" : "",
                       ].join(" ")}
                     >
                       {answer && (
@@ -223,8 +359,32 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
                           {answer.answer.text}
                         </span>
                       )}
-                      {hasPlayer && <MiniPlayer skin={progress.selectedSkin} />}
-                      {hasDoubt && <DoubtEnemy />}
+                      {powerUp && <PowerUpSprite id={powerUp.id} size={32} />}
+                    </div>
+                  );
+                }),
+              )}
+            </div>
+
+            <div className="pointer-events-none absolute inset-2 z-10 grid grid-cols-[repeat(15,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] gap-1">
+              {stageMap.layout.map((row, rowIndex) =>
+                [...row].map((_, colIndex) => {
+                  const position = { row: rowIndex, col: colIndex };
+                  const enemy = enemies.find((item) => samePosition(item.position, position));
+                  const hasPlayer = samePosition(player, position);
+
+                  return (
+                    <div key={`actor-${rowIndex}-${colIndex}`} className="grid min-h-0 place-items-center">
+                      {enemy && (
+                        <motion.div layoutId={enemy.id} className="grid place-items-center" transition={{ type: "spring", stiffness: 340, damping: 32 }}>
+                          <EnemySprite id={enemy.id} />
+                        </motion.div>
+                      )}
+                      {hasPlayer && (
+                        <motion.div layoutId="player" className="grid place-items-center" transition={{ type: "spring", stiffness: 420, damping: 34 }}>
+                          <MiniPlayer skin={progress.selectedSkin} />
+                        </motion.div>
+                      )}
                     </div>
                   );
                 }),

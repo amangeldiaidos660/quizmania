@@ -33,9 +33,11 @@ export function movePosition(position: Position, direction: Direction) {
 }
 
 export function getAnswerPositions(answers: AnswerOption[]) {
+  const shuffledSlots = [...ANSWER_SLOTS].sort(() => Math.random() - 0.5);
+
   return answers.map((answer, index) => ({
     answer,
-    position: ANSWER_SLOTS[index],
+    position: shuffledSlots[index],
   }));
 }
 
@@ -61,6 +63,6 @@ export function moveDoubtTowardPlayer(doubt: Position, player: Position) {
 }
 
 export function clampQuestionCount(value: number) {
-  if (Number.isNaN(value)) return 5;
-  return Math.min(Math.max(value, 5), 15);
+  if (Number.isNaN(value)) return 3;
+  return Math.min(Math.max(value, 3), 15);
 }

@@ -1,22 +1,26 @@
-import { Brain, Play, Trophy } from "lucide-react";
+import { Brain, Lock, Play, Trophy } from "lucide-react";
 import { PlayerAvatar } from "@/assets/game/characters";
 import { clampQuestionCount } from "@/lib/game";
-import { getNextSkinProgress, SKIN_NAMES } from "@/lib/progression";
+import { getNextSkinProgress, SKIN_DESCRIPTIONS, SKIN_NAMES } from "@/lib/progression";
 import { ACCENT_COLORS } from "@/lib/theme";
-import type { AccentColorId, ProgressState } from "@/types/game";
+import type { AccentColorId, ProgressState, SkinId } from "@/types/game";
 
 type StartScreenProps = {
   progress: ProgressState;
   questionCount: number;
   onAccentColorChange: (color: AccentColorId) => void;
+  onSkinChange: (skin: SkinId) => void;
   onQuestionCountChange: (value: number) => void;
   onChooseCategory: () => void;
 };
+
+const skinOrder: SkinId[] = ["base-muncher", "notebook-rookie", "memory-sprinter", "focus-hacker", "quiz-oracle"];
 
 export default function StartScreen({
   progress,
   questionCount,
   onAccentColorChange,
+  onSkinChange,
   onQuestionCountChange,
   onChooseCategory,
 }: StartScreenProps) {
@@ -33,6 +37,7 @@ export default function StartScreen({
             <div className="absolute inset-0 rounded-full blur-3xl accent-soft" />
             <PlayerAvatar skin={progress.selectedSkin} size={230} className="relative animate-[pulse_2.8s_ease-in-out_infinite]" />
           </div>
+
           <div className="mt-5 w-full max-w-sm rounded-lg border border-white/10 bg-white/[0.04] p-4">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="text-neutral-300">Текущий скин</span>
@@ -42,6 +47,31 @@ export default function StartScreen({
               <div className="h-full rounded-full accent-bg" style={{ width: `${progressPercent}%` }} />
             </div>
             <p className="mt-2 text-xs text-neutral-400">{skinProgress.label}</p>
+          </div>
+
+          <div className="mt-4 grid w-full max-w-sm grid-cols-5 gap-2">
+            {skinOrder.map((skin) => {
+              const isUnlocked = progress.unlockedSkins.includes(skin);
+              const isSelected = progress.selectedSkin === skin;
+
+              return (
+                <button
+                  key={skin}
+                  type="button"
+                  disabled={!isUnlocked}
+                  onClick={() => onSkinChange(skin)}
+                  className={[
+                    "relative grid aspect-square place-items-center rounded-lg border bg-white/[0.04] transition",
+                    isSelected ? "accent-border accent-soft" : "border-white/10",
+                    isUnlocked ? "hover:border-[var(--accent)]" : "cursor-not-allowed opacity-45",
+                  ].join(" ")}
+                  title={`${SKIN_NAMES[skin]}: ${SKIN_DESCRIPTIONS[skin]}`}
+                >
+                  <PlayerAvatar skin={skin} size={42} />
+                  {!isUnlocked && <Lock className="absolute right-1 top-1 text-neutral-300" size={14} />}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -59,7 +89,7 @@ export default function StartScreen({
             <label className="block">
               <span className="text-sm font-semibold text-neutral-300">Количество вопросов</span>
               <input
-                min={5}
+                min={3}
                 max={15}
                 type="number"
                 value={questionCount}

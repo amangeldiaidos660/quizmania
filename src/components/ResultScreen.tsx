@@ -1,7 +1,7 @@
-import { RotateCcw, Trophy } from "lucide-react";
+import { RotateCcw, Sparkles, Trophy } from "lucide-react";
 import { PlayerAvatar } from "@/assets/game/characters";
 import { getCategoryTitle } from "@/lib/quiz";
-import { getNextSkinProgress } from "@/lib/progression";
+import { getNextSkinProgress, SKIN_DESCRIPTIONS, SKIN_NAMES } from "@/lib/progression";
 import type { GameResult, ProgressState } from "@/types/game";
 
 type ResultScreenProps = {
@@ -21,6 +21,14 @@ export default function ResultScreen({ result, progress, onRestart }: ResultScre
           <p className="mt-4 text-center text-sm font-black uppercase tracking-[0.2em] accent-text">
             {result.isSuccessful ? "Забег успешен" : "Забег провален"}
           </p>
+          {result.unlockedSkin && (
+            <div className="mt-5 w-full rounded-lg border p-4 text-center accent-border accent-soft">
+              <Sparkles className="mx-auto accent-text" size={24} />
+              <p className="mt-2 text-sm font-black text-white">Открыт новый скин</p>
+              <p className="mt-1 text-sm accent-text">{SKIN_NAMES[result.unlockedSkin]}</p>
+              <p className="mt-2 text-xs text-neutral-300">{SKIN_DESCRIPTIONS[result.unlockedSkin]}</p>
+            </div>
+          )}
         </div>
 
         <div>

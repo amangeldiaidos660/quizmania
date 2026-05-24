@@ -14,6 +14,12 @@ export type SkinId =
 
 export type AccentColorId = "yellow" | "lime" | "cyan" | "pink" | "violet" | "orange";
 
+export type StageId = 1 | 2 | 3;
+
+export type EnemyId = "doubt" | "confusion" | "panic";
+
+export type PowerUpId = "hint" | "freeze" | "focus";
+
 export type Tile = "wall" | "path";
 
 export type Position = {
@@ -22,6 +28,32 @@ export type Position = {
 };
 
 export type Direction = "up" | "down" | "left" | "right";
+
+export type StageConfig = {
+  id: StageId;
+  title: string;
+  progressFrom: number;
+  progressTo: number;
+  enemyIds: EnemyId[];
+};
+
+export type EnemyState = {
+  id: EnemyId;
+  position: Position;
+  frozenUntil: number;
+};
+
+export type PowerUpState = {
+  id: PowerUpId;
+  position: Position;
+};
+
+export type SkinBonus = {
+  speedBoost: number;
+  extraLife: number;
+  unlocksFocus: boolean;
+  freezeBonusMs: number;
+};
 
 export type AnswerOption = {
   id: string;
@@ -50,6 +82,7 @@ export type GameResult = {
   livesLeft: number;
   isSuccessful: boolean;
   bestFunFact: string;
+  unlockedSkin?: SkinId;
 };
 
 export type ProgressState = {

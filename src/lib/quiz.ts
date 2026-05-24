@@ -17,7 +17,7 @@ export function getCategoryTitle(category: CategoryId) {
 
 export function getQuizRun(category: CategoryId, count: number) {
   const pool = typedQuestions.filter((question) => question.category === category);
-  const safeCount = Math.min(Math.max(count, 5), 15);
+  const safeCount = Math.min(Math.max(count, 3), 15);
   const result: QuizQuestion[] = [];
 
   for (let index = 0; index < safeCount; index += 1) {
@@ -28,6 +28,7 @@ export function getQuizRun(category: CategoryId, count: number) {
 }
 
 export function isSuccessfulRun(questionCount: number, correctAnswers: number) {
+  if (questionCount <= 3) return correctAnswers >= 2;
   if (questionCount <= 5) return correctAnswers >= 4;
   if (questionCount <= 10) return correctAnswers >= 7;
   return correctAnswers >= 11;
