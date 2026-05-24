@@ -146,7 +146,10 @@ IMPORTANT RULES:
 4. Make all wrong answers plausible but clearly incorrect
 5. Make fun facts interesting and relevant
 6. Return ONLY valid JSON array, no markdown, no code blocks, no other text
-7. Ensure all answer IDs are unique within each question (a, b, c, d)`;
+7. Ensure all answer IDs are unique within each question (a, b, c, d)
+8. CRITICAL: Keep answer text SHORT (max 40 characters). Answers must fit on 2 lines maximum
+9. CRITICAL: Keep question text concise (max 100 characters)
+10. CRITICAL: Keep explanation brief (max 80 characters)`;
 }
 
 function validateQuestions(

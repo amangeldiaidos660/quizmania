@@ -424,15 +424,9 @@ useEffect(() => {
                       className={[
                         "relative grid min-h-0 place-items-center rounded-[5px]",
                         isWallTile ? "bg-cyan-500/25 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.18)]" : "bg-white/[0.035]",
-                        answer ? "border bg-[var(--accent-soft)] accent-border" : "",
-                        answer?.answer.id === focusAnswerId ? "ring-4 ring-white/80" : "",
+                        !answer ? "" : "",
                       ].join(" ")}
                     >
-                      {answer && (
-                        <span className="px-1 text-center text-[10px] font-black leading-tight text-white md:text-xs">
-                          {answer.answer.text}
-                        </span>
-                      )}
                       {powerUp && <PowerUpSprite id={powerUp.id} size={32} />}
                     </div>
                   );
@@ -441,12 +435,36 @@ useEffect(() => {
             </div>
 
             <div className="pointer-events-none absolute inset-2 z-10">
+              {answerPositions
+                .filter((item) => !hiddenAnswerIds.includes(item.answer.id))
+                .map((answerPos) => (
+                  <motion.div
+                    key={answerPos.answer.id}
+                    className={[
+                      "absolute rounded-lg border-2 bg-[var(--accent-soft)] px-2 py-1 text-center font-black text-white transition-all overflow-hidden",
+                      answerPos.answer.id === focusAnswerId ? "ring-4 ring-white/80 border-white" : "accent-border",
+                    ].join(" ")}
+                    style={{
+                      left: `${(answerPos.position.col / 15) * 100}%`,
+                      top: `${(answerPos.position.row / 15) * 100}%`,
+                      transform: "translate(-50%, -50%)",
+                      maxWidth: "90px",
+                      maxHeight: "80px",
+                    }}
+                    animate={{ scale: answerPos.answer.id === focusAnswerId ? 1.05 : 1 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 28 }}
+                  >
+                    <span className="text-[9px] md:text-[10px] leading-tight break-words line-clamp-4">{answerPos.answer.text}</span>
+                  </motion.div>
+                ))}
               {enemies.map((enemy) => (
                 <motion.div
                   key={enemy.id}
                   className="absolute grid place-items-center"
                   animate={actorStyle(enemy.position)}
                   transition={{ type: "spring", stiffness: 260, damping: 28 }}
+                  style={{ transform: "scale(0.75)" }}
+                  initial={{ scale: 0.75 }}
                 >
                   <EnemySprite id={enemy.id} />
                 </motion.div>
@@ -455,6 +473,8 @@ useEffect(() => {
                 className="absolute grid place-items-center"
                 animate={actorStyle(player)}
                 transition={{ type: "spring", stiffness: 320, damping: 28 }}
+                style={{ transform: "scale(0.75)" }}
+                initial={{ scale: 0.75 }}
               >
                 <MiniPlayer skin={progress.selectedSkin} />
               </motion.div>
@@ -497,14 +517,16 @@ useEffect(() => {
             </AnimatePresence>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 self-start rounded-lg border border-white/10 bg-white/[0.04] p-3 lg:grid-cols-3">
-            <div />
-            <ControlButton direction="up" onDirection={setDirection} icon={<ArrowUp size={22} />} />
-            <div />
-            <ControlButton direction="left" onDirection={setDirection} icon={<ArrowLeft size={22} />} />
-            <ControlButton direction="down" onDirection={setDirection} icon={<ArrowDown size={22} />} />
-            <ControlButton direction="right" onDirection={setDirection} icon={<ArrowRight size={22} />} />
-          </div>
+            <div className="pointer-events-auto absolute bottom-4 left-1/2 z-20 -translate-x-1/2 lg:hidden">
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-black/60 p-3 backdrop-blur">
+                <div />
+                <ControlButton direction="up" onDirection={setDirection} icon={<ArrowUp size={20} />} />
+                <div />
+                <ControlButton direction="left" onDirection={setDirection} icon={<ArrowLeft size={20} />} />
+                <ControlButton direction="down" onDirection={setDirection} icon={<ArrowDown size={20} />} />
+                <ControlButton direction="right" onDirection={setDirection} icon={<ArrowRight size={20} />} />
+              </div>
+            </div>
         </div>
       </div>
     </section>
@@ -527,7 +549,7 @@ function ControlButton({
       onPointerUp={() => onDirection(null)}
       onPointerLeave={() => onDirection(null)}
       onPointerCancel={() => onDirection(null)}
-      className="grid size-14 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+      className="grid size-12 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
       aria-label={`Двигаться: ${direction}`}
     >
       {icon}
