@@ -7,9 +7,11 @@ type CategoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSelect: (category: CategoryId) => void;
+  disabled?: boolean;
+  loading?: boolean;
 };
 
-export default function CategoryModal({ isOpen, onClose, onSelect }: CategoryModalProps) {
+export default function CategoryModal({ isOpen, onClose, onSelect, disabled, loading }: CategoryModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -33,7 +35,8 @@ export default function CategoryModal({ isOpen, onClose, onSelect }: CategoryMod
               <button
                 type="button"
                 onClick={onClose}
-                className="grid size-10 place-items-center rounded-lg border border-white/10 text-neutral-300 transition hover:bg-white/10 hover:text-white"
+                disabled={disabled || loading}
+                className="grid size-10 place-items-center rounded-lg border border-white/10 text-neutral-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="Закрыть выбор категории"
               >
                 <X size={20} />
@@ -46,13 +49,21 @@ export default function CategoryModal({ isOpen, onClose, onSelect }: CategoryMod
                   key={category.id}
                   type="button"
                   onClick={() => onSelect(category.id)}
-                  className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                  disabled={disabled || loading}
+                  className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-white/10 disabled:hover:bg-white/[0.04]"
                 >
                   <span className="text-lg font-black text-white">{category.title}</span>
                   <span className="mt-2 block text-sm text-neutral-400">{category.description}</span>
                 </button>
               ))}
             </div>
+
+            {loading && (
+              <div className="mt-5 flex items-center justify-center gap-2 text-sm text-neutral-400">
+                <div className="size-2 rounded-full bg-[var(--accent)] animate-pulse" />
+                Генерируем вопросы...
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}
