@@ -52,6 +52,59 @@ function shuffle<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
+function getNextPathStep(from: Position, target: Position, layout: readonly string[]) {
+  const path = findPath(from, target, layout);
+  return path[1] ?? from;
+}
+
+function findPath(from: Position, target: Position, layout: readonly string[]) {
+  const queue: Position[] = [from];
+  const visited = new Set<string>([positionKey(from)]);
+  const cameFrom = new Map<string, Position>();
+
+  while (queue.length > 0) {
+    const current = queue.shift() as Position;
+
+    if (samePosition(current, target)) {
+      return reconstructPath(from, current, cameFrom);
+    }
+
+    for (const next of getOpenNeighbors(current, layout)) {
+      const key = positionKey(next);
+      if (visited.has(key)) continue;
+      visited.add(key);
+      cameFrom.set(key, current);
+      queue.push(next);
+    }
+  }
+
+  return [from];
+}
+
+function reconstructPath(from: Position, target: Position, cameFrom: Map<string, Position>) {
+  const path: Position[] = [target];
+  let current = target;
+
+  while (!samePosition(current, from)) {
+    const previous = cameFrom.get(positionKey(current));
+    if (!previous) return [from];
+    path.unshift(previous);
+    current = previous;
+  }
+
+  return path;
+}
+
+function getOpenNeighbors(position: Position, layout: readonly string[]) {
+  return Object.values(directionDelta)
+    .map((delta) => ({ row: position.row + delta.row, col: position.col + delta.col }))
+    .filter((next) => layout[next.row]?.[next.col] && layout[next.row][next.col] !== "#");
+}
+
+function positionKey(position: Position) {
+  return `${position.row}:${position.col}`;
+}
+
 export default function GameBoard({ questions, setup, progress, onFinish }: GameBoardProps) {
   const initialMap = STAGE_MAPS[1];
   const skinBonus = SKIN_BONUSES[progress.selectedSkin];
@@ -71,7 +124,6 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
   const [message, setMessage] = useState<{ title: string; text: string; correct: boolean } | null>(null);
   const bestFunFactRef = useRef("");
   const lastPlayerMoveRef = useRef(0);
-  const lastEnemyMoveRef = useRef<Record<EnemyId, number>>({ doubt: 0, confusion: 0, panic: 0 });
   const playerRef = useRef(player);
   const currentQuestion = questions[questionIndex];
   const stageId = getStageId(questionIndex, questions.length);
@@ -153,17 +205,6 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
           lastPlayerMoveRef.current = timestamp;
           setPlayer((current) => movePosition(current, direction));
         }
-
-        setEnemies((current) =>
-          current.map((enemy) => {
-            if (enemy.frozenUntil > timestamp) return enemy;
-            const moveMs = enemy.id === "panic" ? (Math.floor(timestamp / 2400) % 2 === 0 ? 190 : 300) : enemy.id === "confusion" ? 440 : 390;
-            if (timestamp - lastEnemyMoveRef.current[enemy.id] < moveMs) return enemy;
-
-            lastEnemyMoveRef.current[enemy.id] = timestamp;
-            return { ...enemy, position: moveEnemy(enemy.id, enemy.position, timestamp) };
-          }),
-        );
       }
 
       frame = window.requestAnimationFrame(tick);
@@ -172,6 +213,35 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
   }, [direction, isPaused, playerMoveMs, stageId]);
+
+  useEffect(() => {
+    if (isPaused) return;
+
+    const interval = window.setInterval(() => {
+      const now = performance.now();
+
+      setEnemies((current) =>
+        current.map((enemy) => {
+          if (enemy.frozenUntil > now) return enemy;
+
+          const target =
+            enemy.id === "confusion" && Math.floor(now / 3000) % 2 === 0
+              ? answerPositions[0]?.position ?? playerRef.current
+              : playerRef.current;
+          const steps = enemy.id === "panic" && Math.floor(now / 2200) % 2 === 0 ? 2 : 1;
+          let nextPosition = enemy.position;
+
+          for (let step = 0; step < steps; step += 1) {
+            nextPosition = getNextPathStep(nextPosition, target, stageMap.layout);
+          }
+
+          return { ...enemy, position: nextPosition };
+        }),
+      );
+    }, 360);
+
+    return () => window.clearInterval(interval);
+  }, [answerPositions, isPaused, stageMap.layout]);
 
   useEffect(() => {
     if (isPaused) return;
@@ -194,30 +264,13 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
     }
   }, [player, enemies, isPaused, answerPositions, hiddenAnswerIds, powerUps, currentQuestion.correctAnswerId]);
 
-  function moveEnemy(id: EnemyId, enemy: Position, timestamp: number) {
-    if (id === "confusion" && Math.floor(timestamp / 3000) % 2 === 0) {
-      const nearestAnswer = answerPositions[0]?.position ?? playerRef.current;
-      return stepToward(enemy, nearestAnswer);
-    }
-
-    return stepToward(enemy, playerRef.current);
-  }
-
-  function stepToward(from: Position, target: Position) {
-    const openNeighbors = getOpenNeighbors(from);
-    if (openNeighbors.length === 0) return from;
-
-    return openNeighbors.sort((a, b) => distance(a, target) - distance(b, target))[0];
-  }
-
-  function getOpenNeighbors(position: Position) {
-    return Object.values(directionDelta)
-      .map((delta) => ({ row: position.row + delta.row, col: position.col + delta.col }))
-      .filter((next) => !isWall(next));
-  }
-
-  function distance(a: Position, b: Position) {
-    return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+  function actorStyle(position: Position) {
+    return {
+      left: `${(position.col / 15) * 100}%`,
+      top: `${(position.row / 15) * 100}%`,
+      width: `${100 / 15}%`,
+      height: `${100 / 15}%`,
+    };
   }
 
   function resetQuestionState(nextQuestionIndex: number) {
@@ -340,8 +393,6 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
                   const position = { row: rowIndex, col: colIndex };
                   const answer = answerPositions.find((item) => samePosition(item.position, position) && !hiddenAnswerIds.includes(item.answer.id));
                   const powerUp = powerUps.find((item) => samePosition(item.position, position));
-                  const enemy = enemies.find((item) => samePosition(item.position, position));
-                  const hasPlayer = samePosition(player, position);
                   const isWallTile = tile === "#";
 
                   return (
@@ -366,29 +417,24 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
               )}
             </div>
 
-            <div className="pointer-events-none absolute inset-2 z-10 grid grid-cols-[repeat(15,minmax(0,1fr))] grid-rows-[repeat(15,minmax(0,1fr))] gap-1">
-              {stageMap.layout.map((row, rowIndex) =>
-                [...row].map((_, colIndex) => {
-                  const position = { row: rowIndex, col: colIndex };
-                  const enemy = enemies.find((item) => samePosition(item.position, position));
-                  const hasPlayer = samePosition(player, position);
-
-                  return (
-                    <div key={`actor-${rowIndex}-${colIndex}`} className="grid min-h-0 place-items-center">
-                      {enemy && (
-                        <motion.div layoutId={enemy.id} className="grid place-items-center" transition={{ type: "spring", stiffness: 340, damping: 32 }}>
-                          <EnemySprite id={enemy.id} />
-                        </motion.div>
-                      )}
-                      {hasPlayer && (
-                        <motion.div layoutId="player" className="grid place-items-center" transition={{ type: "spring", stiffness: 420, damping: 34 }}>
-                          <MiniPlayer skin={progress.selectedSkin} />
-                        </motion.div>
-                      )}
-                    </div>
-                  );
-                }),
-              )}
+            <div className="pointer-events-none absolute inset-2 z-10">
+              {enemies.map((enemy) => (
+                <motion.div
+                  key={enemy.id}
+                  className="absolute grid place-items-center"
+                  animate={actorStyle(enemy.position)}
+                  transition={{ type: "spring", stiffness: 260, damping: 28 }}
+                >
+                  <EnemySprite id={enemy.id} />
+                </motion.div>
+              ))}
+              <motion.div
+                className="absolute grid place-items-center"
+                animate={actorStyle(player)}
+                transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              >
+                <MiniPlayer skin={progress.selectedSkin} />
+              </motion.div>
             </div>
 
             <AnimatePresence>
