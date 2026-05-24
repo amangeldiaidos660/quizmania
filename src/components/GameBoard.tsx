@@ -126,7 +126,7 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
   const lastPlayerMoveRef = useRef(0);
   const playerRef = useRef(player);
   const currentQuestion = questions[questionIndex];
-  const stageId = getStageId(questionIndex, questions.length);
+  const stageId = getStageId(correctAnswers, questions.length);
   const stageMap = STAGE_MAPS[stageId];
   const answerPositions = useMemo(() => {
     const slots = shuffle(stageMap.answerSlots).slice(0, currentQuestion.answers.length);
@@ -169,32 +169,55 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
     return () => window.clearTimeout(timer);
   }, [questionIndex]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const keyMap: Record<string, Direction> = {
-        ArrowUp: "up",
-        w: "up",
-        W: "up",
-        ArrowDown: "down",
-        s: "down",
-        S: "down",
-        ArrowLeft: "left",
-        a: "left",
-        A: "left",
-        ArrowRight: "right",
-        d: "right",
-        D: "right",
-      };
-      const nextDirection = keyMap[event.key];
-      if (nextDirection) {
-        event.preventDefault();
-        setDirection(nextDirection);
-      }
-    }
+useEffect(() => {
+  const keyMap: Record<string, Direction> = {
+    arrowup: "up",
+    w: "up",
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    arrowdown: "down",
+    s: "down",
+
+    arrowleft: "left",
+    a: "left",
+
+    arrowright: "right",
+    d: "right",
+  };
+
+  function handleKeyDown(event: KeyboardEvent) {
+    const nextDirection = keyMap[event.key.toLowerCase()];
+
+    if (!nextDirection) return;
+
+    event.preventDefault();
+
+    if (!event.repeat) {
+      setDirection(nextDirection);
+    }
+  }
+
+  function handleKeyUp(event: KeyboardEvent) {
+    const releasedDirection = keyMap[event.key.toLowerCase()];
+
+    if (!releasedDirection) return;
+
+    setDirection((current) => {
+      if (current === releasedDirection) {
+        return null;
+      }
+
+      return current;
+    });
+  }
+
+  window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("keyup", handleKeyUp);
+
+  return () => {
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+  };
+}, []);
 
   useEffect(() => {
     let frame = 0;
@@ -273,8 +296,8 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
     };
   }
 
-  function resetQuestionState(nextQuestionIndex: number) {
-    const nextStage = getStageId(nextQuestionIndex, questions.length);
+  function resetQuestionState(nextQuestionIndex: number, nextCorrectAnswers: number) {
+    const nextStage = getStageId(nextCorrectAnswers, questions.length);
     const nextMap = STAGE_MAPS[nextStage];
     playerRef.current = nextMap.playerStart;
     setPlayer(nextMap.playerStart);
@@ -319,7 +342,7 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
       window.setTimeout(() => goNextQuestion(correctAnswers, nextLives), 1100);
     } else {
       window.setTimeout(() => {
-        resetQuestionState(questionIndex);
+        resetQuestionState(questionIndex, correctAnswers);
         setMessage(null);
       }, 900);
     }
@@ -346,7 +369,7 @@ export default function GameBoard({ questions, setup, progress, onFinish }: Game
 
     const nextIndex = questionIndex + 1;
     setQuestionIndex(nextIndex);
-    resetQuestionState(nextIndex);
+    resetQuestionState(nextIndex, nextCorrect);
     setMessage(null);
     setIsIntro(true);
   }
@@ -495,12 +518,15 @@ function ControlButton({
 }: {
   direction: Direction;
   icon: React.ReactNode;
-  onDirection: (direction: Direction) => void;
+  onDirection: (direction: Direction | null) => void;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onDirection(direction)}
+      onPointerDown={() => onDirection(direction)}
+      onPointerUp={() => onDirection(null)}
+      onPointerLeave={() => onDirection(null)}
+      onPointerCancel={() => onDirection(null)}
       className="grid size-14 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
       aria-label={`Двигаться: ${direction}`}
     >
